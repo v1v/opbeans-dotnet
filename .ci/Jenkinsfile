@@ -82,33 +82,45 @@ pipeline {
           }
         }
         stage('Release') {
-          input {
-            message 'Should we release a new version?'
-            ok 'Yes, we should.'
-            parameters {
-              string(name: 'VERSION', defaultValue: 'latest', description: 'What tag?')
-            }
-          }
-          when {
-            beforeInput true
-            beforeAgent true
-            allOf {
-              anyOf {
-                branch 'master'
-                branch "\\d+\\.\\d+"
-                branch "v\\d?"
-                tag "v\\d+\\.\\d+\\.\\d+*"
-                expression { return params.Run_As_Master_Branch }
+          agent none
+          stages {
+            stage('Input') {
+              when {
+                beforeInput true
+                beforeAgent true
+                allOf {
+                  anyOf {
+                    branch 'master'
+                    branch "\\d+\\.\\d+"
+                    branch "v\\d?"
+                    tag "v\\d+\\.\\d+\\.\\d+*"
+                    expression { return params.Run_As_Master_Branch }
+                  }
+                }
+              }
+              steps {
+                catchError(message: "Input was aborted", buildResult: 'STABLE', stageResult: 'UNSTABLE') {
+                  input {
+                    message 'Should we release a new version?'
+                    ok 'Yes, we should.'
+                    parameters {
+                      string(name: 'VERSION', defaultValue: 'latest', description: 'What tag?')
+                    }
+                  }
+                }
               }
             }
-          }
-          steps {
-            withGithubNotify(context: 'Release') {
-              deleteDir()
-              unstash 'source'
-              dir("${BASE_DIR}"){
-                dockerLogin(secret: "${DOCKERHUB_SECRET}", registry: 'docker.io')
-                sh "VERSION=${VERSION} make publish"
+            stage('Release') {
+              agent { label 'linux && immutable' }
+              steps {
+                withGithubNotify(context: 'Release') {
+                  deleteDir()
+                  unstash 'source'
+                  dir("${BASE_DIR}"){
+                    dockerLogin(secret: "${DOCKERHUB_SECRET}", registry: 'docker.io')
+                    sh "VERSION=${VERSION} make publish"
+                  }
+                }
               }
             }
           }
